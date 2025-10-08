@@ -1,0 +1,45 @@
+version: 0.2
+
+env:
+  variables:
+    SONAR_HOST: "https://sonarqube.internal"         # or SonarCloud URL
+    SONAR_PROJECT_KEY: "my-app"
+    DEPENDENCY_CHECK_OUTPUT: "dependency-check-report.xml"
+phases:
+  install:
+    runtime-versions:
+      java: corretto11        # change to your runtime
+      docker: 18
+    commands:
+      - echo "Installing dependency-check..."
+      - curl -L -o dependency-check.zip https://github.com/jeremylong/DependencyCheck/releases/download/v6.5.0/dependency-check-6.5.0-release.zip
+      - unzip dependency-check.zip -d dependency-check
+      - export PATH=$PATH:$PWD/dependency-check
+      - echo "Logging into ECR"
+      - aws --version
+      - $(aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com)
+  pre_build:
+    commands:
+      - echo "Get secrets from Secrets Manager"
+      - export SONAR_TOKEN=$(aws secretsmanager get-secret-value --secret-id sonar/token --query SecretString --output text)
+      - echo "Running unit tests..."
+      - ./gradlew test --no-daemon
+  build:
+    commands:
+      - echo "Running SonarQube scanner..."
+      - ./gradlew sonarqube -Dsonar.host.url=$SONAR_HOST -Dsonar.login=$SONAR_TOKEN
+      - echo "Running Dependency-Check..."
+      - dependency-check/bin/dependency-check.sh --project "my-app" --scan . --format ALL --out . --out ./$DEPENDENCY_CHECK_OUTPUT
+      - echo "Build Docker image..."
+      - IMAGE_TAG=${CODEBUILD_RESOLVED_SOURCE_VERSION}
+      - docker build -t my-app:$IMAGE_TAG .
+      - docker tag my-app:$IMAGE_TAG $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/my-app:$IMAGE_TAG
+  post_build:
+    commands:
+      - echo "Pushing docker image to ECR..."
+      - docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/my-app:$IMAGE_TAG
+      - printf '[{"name":"my-app","imageUri":"%s"}]' $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/my-app:$IMAGE_TAG > imagedefinitions.json
+artifacts:
+  files:
+    - imagedefinitions.json
+    - $DEPENDENCY_CHECK_OUTPUT
