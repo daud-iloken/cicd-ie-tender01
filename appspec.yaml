@@ -1,0 +1,28 @@
+version: 0.0
+# Tentukan platform komputasi sebagai Amazon ECS
+Resources:
+  - TargetService:
+      Type: AWS::ECS::Service
+      Properties:
+        # Nama kluster ECS anda
+        TaskDefinition: "arn:aws:ecs:REGION:ACCOUNT-ID:task-definition/nama-task-def"
+        # Nama kluster ECS anda
+        LoadBalancerInfo:
+          ContainerName: "nama-container-anda" # Mesti sepadan dengan CONTAINER_NAME dalam buildspec
+          ContainerPort: "80" # Port aplikasi anda dalam container
+        Service: "arn:aws:ecs:REGION:ACCOUNT-ID:service/nama-cluster/nama-service-ecs"
+        # Konfigurasi deployment Blue/Green
+        DeploymentController:
+          Type: CodeDeploy
+        # Lifecycle hook untuk menjalankan ujian semasa deployment (pilihan)
+        # ProdTrafficRoute:
+        #   ListenerArns:
+        #     - "arn:aws:elasticloadbalancing:REGION:ACCOUNT-ID:listener/app/..."
+        # TestTrafficRoute:
+        #   ListenerArns:
+        #     - "arn:aws:elasticloadbalancing:REGION:ACCOUNT-ID:listener/app/..."
+
+# Lifecycle hooks (pilihan) untuk ujian semasa deployment
+# Hooks:
+#   BeforeAllowTraffic: "LambdaFunctionName"
+#   AfterAllowTraffic: "LambdaFunctionName"
